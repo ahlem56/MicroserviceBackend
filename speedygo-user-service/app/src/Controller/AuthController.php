@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 
 class AuthController extends AbstractController
 {
@@ -120,4 +121,178 @@ public function login(Request $req): JsonResponse
 
         return $this->json(['message' => 'logged out', 'status' => $resp->getStatusCode()]);
     }
+
+
+  #[Route('/api/profile', methods: ['GET'])]
+public function getProfile(EM $em): JsonResponse
+{
+    $kcUser = $this->getUser();
+    $email = method_exists($kcUser, 'getEmail') ? $kcUser->getEmail() : null;
+    $username = $kcUser->getUserIdentifier();
+
+    // Try email first, then username
+    $user = null;
+    if ($email) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $email]);
+    }
+    if (!$user) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $username]);
+    }
+
+    if (!$user) {
+        return $this->json(['error' => 'User not found in local DB'], 404);
+    }
+
+    return $this->json([
+        'id' => $user->getId(),
+        'firstName' => $user->getFirstName(),
+        'lastName' => $user->getLastName(),
+        'email' => $user->getEmail(),
+        'profilePhoto' => $user->getProfilePhoto(),
+        'address' => $user->getAddress(),
+        'birthDate' => $user->getBirthDate()?->format('Y-m-d'),
+        'role' => $user->getRole(),
+    ]);
+}
+
+#[Route('/api/updateProfile', methods: ['PUT'])]
+public function updateProfile(Request $req, EM $em): JsonResponse
+{
+    $kcUser = $this->getUser();
+    $email = method_exists($kcUser, 'getEmail') ? $kcUser->getEmail() : null;
+    $username = $kcUser->getUserIdentifier();
+
+    // Try to find local user by email or username
+    $user = null;
+    if ($email) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $email]);
+    }
+    if (!$user) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $username]);
+    }
+
+    if (!$user) {
+        return $this->json(['error' => 'User not found in local DB'], 404);
+    }
+
+    $data = json_decode($req->getContent(), true) ?? [];
+
+    // ✅ Only update safe fields
+    if (isset($data['firstName'])) $user->setFirstName($data['firstName']);
+    if (isset($data['lastName'])) $user->setLastName($data['lastName']);
+    if (isset($data['address'])) $user->setAddress($data['address']);
+    if (isset($data['profilePhoto'])) $user->setProfilePhoto($data['profilePhoto']);
+    if (isset($data['birthDate'])) {
+        try {
+            $user->setBirthDate(new \DateTime($data['birthDate']));
+        } catch (\Exception $e) {
+            return $this->json(['error' => 'Invalid birthDate format (expected YYYY-MM-DD)'], 400);
+        }
+    }
+
+    $em->flush();
+
+    return $this->json([
+        'message' => 'Profile updated successfully',
+        'updated' => [
+            'firstName' => $user->getFirstName(),
+            'lastName' => $user->getLastName(),
+            'address' => $user->getAddress(),
+            'birthDate' => $user->getBirthDate()?->format('Y-m-d'),
+            'profilePhoto' => $user->getProfilePhoto(),
+        ],
+    ]);
+}
+
+
+
+#[Route('/api/change-password', methods: ['PUT'])]
+public function changePassword(Request $req, KeycloakAdmin $kc, EM $em): JsonResponse
+{
+    $kcUser = $this->getUser();
+    $email = method_exists($kcUser, 'getEmail') ? $kcUser->getEmail() : null;
+    $username = $kcUser->getUserIdentifier();
+
+    // 1️⃣ Find local user to get Keycloak ID
+    $user = null;
+    if ($email) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $email]);
+    }
+    if (!$user) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $username]);
+    }
+
+    if (!$user) {
+        return $this->json(['error' => 'User not found in local DB'], 404);
+    }
+
+    $data = json_decode($req->getContent(), true) ?? [];
+    $newPassword = $data['newPassword'] ?? null;
+
+    if (!$newPassword || strlen($newPassword) < 6) {
+        return $this->json(['error' => 'Password must be at least 6 characters'], 400);
+    }
+
+    // 2️⃣ Ask Keycloak to update the password
+    try {
+        $kc->resetUserPassword($user->getKeycloakId(), $newPassword);
+    } catch (\Throwable $e) {
+        return $this->json([
+            'error' => 'Failed to change password in Keycloak',
+            'details' => $e->getMessage()
+        ], 500);
+    }
+
+    return $this->json(['message' => 'Password changed successfully']);
+}
+
+
+#[Route('/api/deleteUser', methods: ['DELETE'])]
+public function deleteProfile(KeycloakAdmin $kc, EM $em): JsonResponse
+{
+    $kcUser = $this->getUser();
+    $email = method_exists($kcUser, 'getEmail') ? $kcUser->getEmail() : null;
+    $username = $kcUser->getUserIdentifier();
+
+    // 1️⃣ Find local user
+    $user = null;
+    if ($email) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $email]);
+    }
+    if (!$user) {
+        $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $username]);
+    }
+
+    if (!$user) {
+        return $this->json(['error' => 'User not found in local DB'], 404);
+    }
+
+    $keycloakId = $user->getKeycloakId();
+
+    // 2️⃣ Delete in Keycloak first
+    try {
+        $kc->deleteUser($keycloakId);
+    } catch (\Throwable $e) {
+        return $this->json([
+            'error' => 'Failed to delete user in Keycloak',
+            'details' => $e->getMessage()
+        ], 500);
+    }
+
+    // 3️⃣ Then delete locally
+    $em->remove($user);
+    $em->flush();
+
+    return $this->json(['message' => 'User deleted successfully']);
+}
+
+
+
+#[Route('/api/admin/users', methods: ['GET'])]
+#[IsGranted('ROLE_ADMIN')]
+public function listAllUsers(EM $em): JsonResponse
+{
+    $users = $em->getRepository(\App\Entity\User::class)->findAll();
+    return $this->json($users);
+}
 }

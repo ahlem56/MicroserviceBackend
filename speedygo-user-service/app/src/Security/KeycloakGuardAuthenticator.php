@@ -43,7 +43,7 @@ class KeycloakGuardAuthenticator extends AbstractAuthenticator
         $jwsHeader = $jws->getSignature(0)->getProtectedHeader();
         $kid = $jwsHeader['kid'] ?? null;
 
-        // Fetch JWKS
+        // 🔐 Fetch JWKS (public keys from Keycloak)
         $response = $this->http->request('GET', $this->jwksUrl, ['timeout' => 5]);
         if ($response->getStatusCode() !== 200) {
             throw new AuthenticationException('Cannot fetch JWKS');
@@ -66,6 +66,7 @@ class KeycloakGuardAuthenticator extends AbstractAuthenticator
             throw new AuthenticationException("No matching key for kid: {$kid}");
         }
 
+        // 🔏 Verify token signature
         $verifier = new JWSVerifier(new AlgorithmManager([new RS256()]));
         if (!$verifier->verifyWithKey($jws, $key, 0)) {
             throw new AuthenticationException('Invalid signature');
@@ -73,7 +74,7 @@ class KeycloakGuardAuthenticator extends AbstractAuthenticator
 
         $payload = json_decode($jws->getPayload(), true);
 
-        // --- issuer check with tolerance ---
+        // ✅ Issuer validation with docker/local tolerance
         $tokenIssuer = rtrim($payload['iss'] ?? '', '/');
         $expectedIssuer = rtrim($this->issuer, '/');
         $normalizedTokenIssuer = str_replace('localhost', 'host.docker.internal', $tokenIssuer);
@@ -83,42 +84,47 @@ class KeycloakGuardAuthenticator extends AbstractAuthenticator
             throw new AuthenticationException('Issuer mismatch');
         }
 
-        // ✅ Create a virtual Keycloak user object
+        // ✅ Build a virtual authenticated Keycloak user
         return new SelfValidatingPassport(
-    new UserBadge($payload['preferred_username'], function () use ($payload) {
-        return new class($payload) implements UserInterface {
-            public function __construct(private array $data) {}
+            new UserBadge($payload['preferred_username'], function () use ($payload) {
+                return new class($payload) implements UserInterface {
+                    public function __construct(private array $data) {}
 
-            public function getUserIdentifier(): string
-            {
-                return $this->data['preferred_username'] ?? 'anonymous';
-            }
+                    public function getUserIdentifier(): string
+                    {
+                        return $this->data['preferred_username'] ?? 'anonymous';
+                    }
 
-            public function getEmail(): ?string
-            {
-                return $this->data['email'] ?? null;
-            }
+                    public function getEmail(): ?string
+                    {
+                        return $this->data['email'] ?? null;
+                    }
 
-            public function getRoles(): array
-            {
-                // Add ROLE_USER by default for safety
-                $roles = $this->data['realm_access']['roles'] ?? [];
-                if (!in_array('ROLE_USER', $roles, true)) {
-                    $roles[] = 'ROLE_USER';
-                }
-                return $roles;
-            }
+                    public function getRoles(): array
+                    {
+                        $roles = $this->data['realm_access']['roles'] ?? [];
 
-            public function eraseCredentials(): void {}
-        };
-    })
-);
+                        // 🔹 Normalize Keycloak roles to Symfony-style (ROLE_ADMIN, ROLE_DRIVER, etc.)
+                        $mappedRoles = array_map(fn($r) => 'ROLE_' . strtoupper($r), $roles);
 
+                        // 🔹 Always include ROLE_USER
+                        if (!in_array('ROLE_USER', $mappedRoles, true)) {
+                            $mappedRoles[] = 'ROLE_USER';
+                        }
+
+                        return array_unique($mappedRoles);
+                    }
+
+                    public function eraseCredentials(): void {}
+                };
+            })
+        );
     }
 
     public function onAuthenticationSuccess(Request $request, $token, string $firewallName): ?JsonResponse
     {
-        return null; // Continue to the controller
+        // Continue request if authenticated successfully
+        return null;
     }
 
     public function onAuthenticationFailure(Request $request, AuthenticationException $exception): ?JsonResponse

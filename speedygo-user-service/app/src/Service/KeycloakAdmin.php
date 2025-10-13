@@ -74,4 +74,40 @@ class KeycloakAdmin
 
         return $id; // keycloakId
     }
+
+
+    public function resetUserPassword(string $keycloakId, string $newPassword): void
+{
+    $token = $this->token();
+
+    $this->http->request(
+        'PUT',
+        "{$this->base}/admin/realms/{$this->realm}/users/{$keycloakId}/reset-password",
+        [
+            'headers' => ['Authorization' => "Bearer {$token}"],
+            'json' => [
+                'type' => 'password',
+                'temporary' => false,
+                'value' => $newPassword,
+            ],
+        ]
+    );
+}
+
+
+public function deleteUser(string $keycloakId): void
+{
+    $token = $this->token();
+
+    $response = $this->http->request(
+        'DELETE',
+        "{$this->base}/admin/realms/{$this->realm}/users/{$keycloakId}",
+        ['headers' => ['Authorization' => "Bearer {$token}"]]
+    );
+
+    if ($response->getStatusCode() >= 300) {
+        throw new \RuntimeException('Failed to delete user in Keycloak (status '.$response->getStatusCode().')');
+    }
+}
+
 }
