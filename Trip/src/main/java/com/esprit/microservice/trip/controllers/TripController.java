@@ -1,11 +1,13 @@
 package com.esprit.microservice.trip.controllers;
 
-
 import com.esprit.microservice.trip.entities.Trip;
 import com.esprit.microservice.trip.services.TripService;
+import com.esprit.microservice.trip.services.UserClientService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 
 import java.util.List;
 
@@ -14,9 +16,11 @@ import java.util.List;
 public class TripController {
 
     private final TripService tripService;
+    private final UserClientService userClientService;
 
-    public TripController(TripService tripService) {
+    public TripController(TripService tripService, UserClientService userClientService) {
         this.tripService = tripService;
+        this.userClientService = userClientService;
     }
 
     @GetMapping("/getAllTrips")
@@ -24,42 +28,24 @@ public class TripController {
         return tripService.getAllTrips();
     }
 
-    @GetMapping("/getTrip/{id}")
-    public ResponseEntity<Trip> getTripById(@PathVariable Integer id) {
-        return tripService.getTripById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
-    }
-
     @PostMapping("/createTrip")
-    public ResponseEntity<Trip> createTrip(@Valid @RequestBody Trip trip) {
-        return ResponseEntity.ok(tripService.createTrip(trip));
-    }
+    public ResponseEntity<?> createTrip(@Valid @RequestBody Trip trip,
+                                        @RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader) {
 
-    @PutMapping("/updateTrip/{id}")
-    public ResponseEntity<Trip> updateTrip(@PathVariable Integer id, @Valid @RequestBody Trip tripDetails) {
-        return ResponseEntity.ok(tripService.updateTrip(id, tripDetails));
-    }
+        // 1️⃣ Get JWT token
+        String jwtToken = authorizationHeader.replace("Bearer ", "");
 
-    @DeleteMapping("/deleteTrip/{id}")
-    public ResponseEntity<Void> deleteTrip(@PathVariable Integer id) {
-        tripService.deleteTrip(id);
-        return ResponseEntity.noContent().build();
-    }
+        // 2️⃣ Call the user microservice to fetch user profile
+        try {
+            String userProfile = userClientService.getUserProfile(jwtToken);
+            System.out.println("✅ User Profile from User Microservice: " + userProfile);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body("❌ Failed to contact User microservice: " + e.getMessage());
+        }
 
-    // Custom endpoints
-    @GetMapping("/getTripByUser/{userId}")
-    public List<Trip> getTripsByUser(@PathVariable Integer userId) {
-        return tripService.getTripsByUser(userId);
-    }
-
-    @GetMapping("/getTripByDriver/{driverId}")
-    public List<Trip> getTripsByDriver(@PathVariable Integer driverId) {
-        return tripService.getTripsByDriver(driverId);
-    }
-
-    @GetMapping("/getTripByVehicle/{vehicleId}")
-    public List<Trip> getTripsByVehicle(@PathVariable Integer vehicleId) {
-        return tripService.getTripsByVehicle(vehicleId);
+        // 3️⃣ Save trip
+        Trip createdTrip = tripService.createTrip(trip);
+        return ResponseEntity.ok(createdTrip);
     }
 }
