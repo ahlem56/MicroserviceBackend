@@ -1864,5 +1864,31 @@
   },
   "clientPolicies" : {
     "policies" : [ ]
+  },
+  
+"users": [
+  {
+    "username": "admin",
+    "enabled": true,
+    "email": "admin@example.com",
+    "firstName": "admin",
+    "lastName": "admin",
+    "credentials": [
+      { "type": "password", "value": "admin123", "temporary": false }
+    ],
+    "realmRoles": [ "ADMIN" ]
+  },
+  {
+    "username": "ahlem",
+    "enabled": true,
+    "email": "ahlem@example.com",
+    "firstName": "Ahlem",
+    "lastName": "Bouchahoua",
+    "credentials": [
+      { "type": "password", "value": "ahlem123", "temporary": false }
+    ],
+    "realmRoles": [ "USER" ]
   }
+]
 }
+

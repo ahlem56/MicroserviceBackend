@@ -1,4 +1,11 @@
+# ⚙️ Docker Compose for SpeedyGo Microservices
+# Version is optional in newer Docker versions
+# version: '3.9'
+
 services:
+  # -------------------------------------------------
+  # 🗄 PostgreSQL (for Symfony User Service)
+  # -------------------------------------------------
   db:
     image: postgres:15
     container_name: speedygo-db
@@ -10,13 +17,38 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - speedygo-network
 
+  # -------------------------------------------------
+  # 🧩 Eureka Server
+  # -------------------------------------------------
   eureka-server:
     build: ./eureka-server
     container_name: eureka-server
     ports:
       - "8761:8761"
+    networks:
+      - speedygo-network
 
+  # -------------------------------------------------
+  # ⚙️ Spring Cloud Config Server
+  # -------------------------------------------------
+  config-server:
+    build: ./config-server
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./config-server/config-repo:/config-repo
+    depends_on:
+      - eureka-server
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
+  # 🔑 Keycloak Authentication Server
+  # -------------------------------------------------
   keycloak:
     image: quay.io/keycloak/keycloak:25.0.2
     container_name: keycloak
@@ -32,7 +64,12 @@ services:
       - ./keycloak:/opt/keycloak/data/import
     ports:
       - "8080:8080"
+    networks:
+      - speedygo-network
 
+  # -------------------------------------------------
+  # 👤 Symfony User Service (static route)
+  # -------------------------------------------------
   user-service:
     build: ./speedygo-user-service
     container_name: speedygo-user-service
@@ -42,22 +79,55 @@ services:
       - db
     ports:
       - "8084:8084"
+    networks:
+      - speedygo-network
 
+  # -------------------------------------------------
+  # 🚗 Trip Microservice (Eureka registered + persistent H2)
+  # -------------------------------------------------
   trip-service:
     build: ./Trip
     container_name: trip-service
     depends_on:
       - keycloak
       - eureka-server
+      - config-server
       - user-service
     ports:
       - "8082:8082"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+    volumes:
+      - tripdata:/data       # ✅ Persistent H2 database
+    networks:
+      - speedygo-network
 
+  # -------------------------------------------------
+  # 🌐 API Gateway (Dynamic + Static routing)
+  # -------------------------------------------------
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    depends_on:
+      - eureka-server
+      - keycloak
+      - config-server
+      - user-service
+      - trip-service
+    ports:
+      - "8090:8090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - speedygo-network
+
+# -------------------------------------------------
+# 📦 Volumes and Networks
+# -------------------------------------------------
 volumes:
   pgdata:
+  tripdata:     # ✅ Added for Trip persistence
 
 networks:
-  default:
-    name: speedygo-network
+  speedygo-network:
+    driver: bridge

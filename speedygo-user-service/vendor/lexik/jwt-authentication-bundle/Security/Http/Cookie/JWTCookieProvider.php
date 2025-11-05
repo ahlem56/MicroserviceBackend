@@ -71,11 +71,11 @@ final class JWTCookieProvider
             $expiresAt,
             $path ?: $this->defaultPath,
             $domain ?: $this->defaultDomain,
-            $secure ?? $this->defaultSecure,
-            $httpOnly ?? $this->defaultHttpOnly,
+            $secure ?: $this->defaultSecure,
+            $httpOnly ?: $this->defaultHttpOnly,
             false,
             $sameSite ?: $this->defaultSameSite,
-            $partitioned ?? $this->defaultPartitioned
+            $partitioned ?: $this->defaultPartitioned
         );
     }
 }
