@@ -68,62 +68,75 @@ public function login(Request $req, EM $em): JsonResponse
         return $this->json(['error' => 'Missing username or password'], 400);
     }
 
-    // 🔐 1️⃣ Ask Keycloak for access token
-    $resp = $this->http->request(
-        'POST',
-        $_ENV['KEYCLOAK_BASE'].'/realms/'.$_ENV['KEYCLOAK_REALM'].'/protocol/openid-connect/token',
-        [
-            'body' => [
-                'grant_type' => 'password',
-                'client_id' => $_ENV['KEYCLOAK_ADMIN_CLIENT_ID'],
-                'client_secret' => $_ENV['KEYCLOAK_ADMIN_CLIENT_SECRET'],
-                'username' => $username,
-                'password' => $password,
-            ],
-        ]
-    )->toArray(false);
+    // 1) Ask Keycloak
+    try {
+        $resp = $this->http->request(
+            'POST',
+            $_ENV['KEYCLOAK_BASE'] . '/realms/' . $_ENV['KEYCLOAK_REALM'] . '/protocol/openid-connect/token',
+            [
+                'body' => [
+                    'grant_type' => 'password',
+                    'client_id' => $_ENV['KEYCLOAK_ADMIN_CLIENT_ID'],
+                    'client_secret' => $_ENV['KEYCLOAK_ADMIN_CLIENT_SECRET'],
+                    'username' => $username,
+                    'password' => $password,
+                ],
+                'timeout' => 5
+            ]
+        )->toArray(false);
+    } catch (\Throwable $e) {
+        return $this->json(['error' => 'Keycloak login request failed', 'details' => $e->getMessage()], 500);
+    }
 
-    if (!isset($resp['access_token'])) {
+    if (empty($resp['access_token'])) {
         return $this->json(['error' => 'Invalid credentials'], 401);
     }
 
-    // 🧠 2️⃣ Decode the JWT payload
+    // 2) Decode token
     $jwt = $resp['access_token'];
-    $payload = json_decode(base64_decode(explode('.', $jwt)[1] ?? ''), true) ?? [];
+    $parts = explode('.', $jwt);
+    $payload = json_decode(base64_decode($parts[1] ?? ''), true) ?? [];
 
-    // 🧩 3️⃣ Extract email and roles safely
+    // 3) Extract identities & roles
     $email = $payload['email'] ?? $payload['preferred_username'] ?? $username;
-    $realmRoles = $payload['realm_access']['roles'] ?? [];
-    $clientRoles = [];
 
-    if (isset($payload['resource_access'])) {
-        foreach ($payload['resource_access'] as $client => $clientData) {
+    $realmRoles = array_map('strtoupper', $payload['realm_access']['roles'] ?? []);
+    $clientRoles = [];
+    if (!empty($payload['resource_access'])) {
+        foreach ($payload['resource_access'] as $clientData) {
             if (!empty($clientData['roles'])) {
-                $clientRoles = array_merge($clientRoles, $clientData['roles']);
+                $clientRoles = array_merge($clientRoles, array_map('strtoupper', $clientData['roles']));
             }
         }
     }
 
-    // 🚮 4️⃣ Merge & clean up roles
-    $mergedRoles = array_unique(array_map('strtoupper', array_merge($realmRoles, $clientRoles)));
+    // 4) Whitelist + priority (ADMIN > DRIVER > USER)
+    $allowed = ['ADMIN', 'DRIVER', 'USER'];
+    $allRoles = array_values(array_unique(array_merge($realmRoles, $clientRoles)));
+    $onlyAllowed = array_values(array_intersect($allowed, $allRoles));
+    $role = $onlyAllowed[0] ?? 'USER';
 
-    $filteredRoles = array_values(array_filter($mergedRoles, function ($r) {
-        $blocked = ['OFFLINE_ACCESS', 'DEFAULT-ROLES-SPEEDYGO', 'UMA_AUTHORIZATION'];
-        return !in_array($r, $blocked, true);
-    }));
-
-    // 🧾 5️⃣ Determine the final role
-    $role = !empty($filteredRoles) ? $filteredRoles[0] : 'USER';
-
-    // 🗄️ 6️⃣ Check local DB override (✅ fixed entity)
+    // 5) DB override if valid
     $user = $em->getRepository(\App\Entity\SimpleUser::class)->findOneBy(['email' => $email]);
     if ($user && $user->getRole()) {
-        $role = strtoupper($user->getRole());
+        $dbRole = strtoupper($user->getRole());
+        if (in_array($dbRole, $allowed, true)) {
+            $role = $dbRole;
+        }
     }
 
-    // ✅ 7️⃣ Return final JSON
+    // ---------- TEMP DEBUG (remove after one test) ----------
+    error_log('[LOGIN DEBUG] email='.$email.
+        ' realmRoles='.json_encode($realmRoles).
+        ' clientRoles='.json_encode($clientRoles).
+        ' allRoles='.json_encode($allRoles).
+        ' onlyAllowed='.json_encode($onlyAllowed).
+        ' pickedRole='.$role.
+        ' dbRole='.(isset($dbRole)?$dbRole:'(none)'));
+    // --------------------------------------------------------
+
     return $this->json([
-        'token' => 'Bearer '.$jwt,
+        'token' => 'Bearer ' . $jwt,
         'refresh_token' => $resp['refresh_token'] ?? null,
         'role' => $role,
         'user' => [
@@ -132,9 +145,16 @@ public function login(Request $req, EM $em): JsonResponse
             'lastName' => $user?->getLastName(),
             'email' => $email,
         ],
+        // TEMP: include debug once; delete after confirming
+        'debug' => [
+            'realmRoles' => $realmRoles,
+            'clientRoles' => $clientRoles,
+            'allRoles' => $allRoles,
+            'onlyAllowed' => $onlyAllowed,
+            'pickedRole' => $role,
+        ],
     ]);
 }
-
 
 
 
