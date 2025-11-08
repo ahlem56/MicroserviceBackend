@@ -1,8 +1,70 @@
 # ⚙️ Docker Compose for SpeedyGo Microservices
-# Version is optional in newer Docker versions
-# version: '3.9'
+# version: '3.9'  # Optional for newer Docker versions
 
 services:
+  # -------------------------------------------------
+  # 🚙 Carpooling Microservice
+  # -------------------------------------------------
+  carpooling-service:
+    build: ./Carpooling
+    container_name: carpooling-service
+    depends_on:
+      mysql-carpooling:
+        condition: service_healthy   # ✅ Wait until DB is ready
+      keycloak:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+      user-service:
+        condition: service_started
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
+  # 🗄️ MySQL Database for Carpooling
+  # -------------------------------------------------
+  mysql-carpooling:
+    image: mysql:8.0
+    container_name: mysql-carpooling
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ""
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: carpooling_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysqlcarpooldata:/var/lib/mysql
+    networks:
+      - speedygo-network
+    healthcheck:                     # ✅ Wait for MySQL to be ready
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  # -------------------------------------------------
+  # 🧭 phpMyAdmin (for MySQL Carpooling Database)
+  # -------------------------------------------------
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: phpmyadmin
+    depends_on:
+      - mysql-carpooling
+    environment:
+      PMA_HOST: mysql-carpooling
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: ""
+    ports:
+      - "8088:80"   # ✅ Use port 8088 on your host
+    networks:
+      - speedygo-network
   # -------------------------------------------------
   # 🗄 PostgreSQL (for Symfony User Service)
   # -------------------------------------------------
@@ -68,7 +130,7 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
-  # 👤 Symfony User Service (static route)
+  # 👤 Symfony User Service
   # -------------------------------------------------
   user-service:
     build:
@@ -81,13 +143,12 @@ services:
     ports:
       - "8084:8084"
     volumes:
-      - ./speedygo-user-service/app:/var/www/html/app   # ✅ correct folder mapping
+      - ./speedygo-user-service/app:/var/www/html/app   # ✅ Correct folder mapping
     networks:
       - speedygo-network
 
-
   # -------------------------------------------------
-  # 🚗 Trip Microservice (Eureka registered + persistent H2)
+  # 🚗 Trip Microservice
   # -------------------------------------------------
   trip-service:
     build: ./Trip
@@ -107,7 +168,7 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
-  # 🌐 API Gateway (Dynamic + Static routing)
+  # 🌐 API Gateway
   # -------------------------------------------------
   api-gateway:
     build: ./api-gateway
@@ -130,7 +191,8 @@ services:
 # -------------------------------------------------
 volumes:
   pgdata:
-  tripdata:     # ✅ Added for Trip persistence
+  tripdata:             # ✅ Trip persistence
+  mysqlcarpooldata:     # ✅ MySQL persistence for Carpooling
 
 networks:
   speedygo-network:
