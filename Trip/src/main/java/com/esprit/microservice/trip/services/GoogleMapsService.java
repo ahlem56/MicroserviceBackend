@@ -36,8 +36,14 @@ public class GoogleMapsService {
                     result.put("distance", ((Map) leg.get("distance")).get("text"));
                     result.put("duration", ((Map) leg.get("duration")).get("text"));
                 }
+                // ✅ expose encoded polyline so Angular can draw it
+                Map<String, Object> overviewPolyline = (Map<String, Object>) route.get("overview_polyline");
+                if (overviewPolyline != null) {
+                    result.put("polyline", overviewPolyline.get("points"));
+                }
             }
         }
+
         System.out.println("🌍 Google API response: " + data);
         return result;
     }

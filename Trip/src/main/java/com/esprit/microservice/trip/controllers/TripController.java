@@ -38,8 +38,9 @@ public class TripController {
     }
 
     // ✈️ Accessible uniquement à USER
+
     @PostMapping("/createTrip")
-    @PreAuthorize("hasRole('USER')")
+    //@PreAuthorize("hasRole('USER')")
     public ResponseEntity<?> createTrip(@Valid @RequestBody Trip trip,
                                         @RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader) {
 
@@ -91,4 +92,6 @@ public class TripController {
         tripService.createTrip(trip);
         return ResponseEntity.ok(trip);
     }
+
+
 }

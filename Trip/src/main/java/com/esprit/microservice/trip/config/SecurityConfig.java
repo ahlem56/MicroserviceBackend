@@ -9,31 +9,19 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
-@EnableMethodSecurity
+//@EnableMethodSecurity
 public class SecurityConfig {
-
-    private final KeycloakRealmRoleConverter keycloakRealmRoleConverter;
-
-    public SecurityConfig(KeycloakRealmRoleConverter keycloakRealmRoleConverter) {
-        this.keycloakRealmRoleConverter = keycloakRealmRoleConverter;
-    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        JwtAuthenticationConverter jwtAuthConverter = new JwtAuthenticationConverter();
-        jwtAuthConverter.setJwtGrantedAuthoritiesConverter(keycloakRealmRoleConverter);
-
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/trip/getAllTrips").hasAnyRole("USER", "DRIVER", "ADMIN")
-                        .requestMatchers("/trip/createTrip").hasRole("USER")
-                        .anyRequest().authenticated()
+                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/maps/**").permitAll()
+                        .requestMatchers("/**").permitAll() // ✅ allow everything for testing
                 )
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter))
-                );
-
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt());
         return http.build();
     }
 }
