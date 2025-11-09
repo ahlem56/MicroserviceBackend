@@ -2,8 +2,8 @@ package tn.esprit.carpooling.controllers;
 
 import tn.esprit.carpooling.entities.Carpool;
 import tn.esprit.carpooling.services.CarpoolService;
-import tn.esprit.carpooling.services.UserClientService;
-import org.springframework.http.*;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -13,51 +13,34 @@ import java.util.List;
 public class CarpoolController {
 
     private final CarpoolService carpoolService;
-    private final UserClientService userClientService;
 
-    public CarpoolController(CarpoolService carpoolService, UserClientService userClientService) {
+    public CarpoolController(CarpoolService carpoolService) {
         this.carpoolService = carpoolService;
-        this.userClientService = userClientService;
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('USER','DRIVER','ADMIN')")
     public List<Carpool> getAllCarpools() {
         return carpoolService.getAllCarpools();
     }
 
     @GetMapping("/destination/{destination}")
+    @PreAuthorize("hasAnyRole('USER','DRIVER','ADMIN')")
     public List<Carpool> getByDestination(@PathVariable String destination) {
         return carpoolService.findByDestination(destination);
     }
 
     @PostMapping
-    public ResponseEntity<?> addCarpool(
-            @RequestHeader("Authorization") String authHeader,
-            @RequestBody Carpool carpool) {
-        String token = authHeader.replace("Bearer ", "");
-
-        // ✅ Only DRIVER or ADMIN can create carpool
-        if (!userClientService.isUserDriver(token) && !userClientService.isUserAdmin(token)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("You are not authorized to create a carpool.");
-        }
-
+    @PreAuthorize("hasAnyRole('DRIVER','ADMIN')")
+    public ResponseEntity<Carpool> addCarpool(@RequestBody Carpool carpool) {
         Carpool saved = carpoolService.addCarpool(carpool);
         return ResponseEntity.ok(saved);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteCarpool(
-            @PathVariable Long id,
-            @RequestHeader("Authorization") String authHeader) {
-        String token = authHeader.replace("Bearer ", "");
-
-        if (!userClientService.isUserAdmin(token)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("Only ADMIN can delete carpools.");
-        }
-
+    @PreAuthorize("hasAnyRole('DRIVER','ADMIN')")
+    public ResponseEntity<String> deleteCarpool(@PathVariable Long id) {
         carpoolService.deleteCarpool(id);
-        return ResponseEntity.ok("Carpool deleted successfully.");
+        return ResponseEntity.ok("Carpool deleted successfully");
     }
 }

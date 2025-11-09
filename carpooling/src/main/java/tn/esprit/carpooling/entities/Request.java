@@ -1,5 +1,6 @@
 package tn.esprit.carpooling.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -16,6 +17,8 @@ public class Request {
     private Long passengerId;       // comes from User Service
     private String requestedDestination;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "carpool_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Carpool carpool;
 }

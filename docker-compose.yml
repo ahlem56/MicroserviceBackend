@@ -92,6 +92,13 @@ services:
       - "8761:8761"
     networks:
       - speedygo-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8761" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 
   # -------------------------------------------------
   # ⚙️ Spring Cloud Config Server
@@ -104,11 +111,17 @@ services:
     volumes:
       - ./config-server/config-repo:/config-repo
     depends_on:
-      - eureka-server
+      eureka-server:
+        condition: service_healthy
     networks:
       - speedygo-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8888/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # -------------------------------------------------
+    # -------------------------------------------------
   # 🔑 Keycloak Authentication Server
   # -------------------------------------------------
   keycloak:

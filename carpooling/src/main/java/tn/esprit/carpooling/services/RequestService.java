@@ -22,12 +22,25 @@ public class RequestService {
 
     @Transactional
     public Request addRequest(Request request) {
-        Carpool carpool = request.getCarpool();
+        if (request.getCarpool() == null || request.getCarpool().getId() == null) {
+            throw new IllegalArgumentException("Carpool ID must be provided");
+        }
+
+        // Fetch the carpool entity from DB
+        Carpool carpool = carpoolRepository.findById(request.getCarpool().getId())
+                .orElseThrow(() -> new IllegalStateException("Carpool not found with ID " + request.getCarpool().getId()));
+
         if (carpool.getAvailableSeats() <= 0) {
             throw new IllegalStateException("No seats available for this ride.");
         }
+
+        // Decrement seat count
         carpool.setAvailableSeats(carpool.getAvailableSeats() - 1);
         carpoolRepository.save(carpool);
+
+        // Attach the managed carpool entity
+        request.setCarpool(carpool);
+
         return requestRepository.save(request);
     }
 
