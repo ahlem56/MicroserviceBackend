@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Dto\RegisterDto;
 use App\Entity\SimpleUser;
 use App\Entity\Driver;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use App\Service\KeycloakAdmin;
 use Doctrine\ORM\EntityManagerInterface as EM;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -34,6 +35,15 @@ class AuthController extends AbstractController
             return $this->json(['error' => (string)$errors], 400);
         }
 
+        $existingSimple = $em->getRepository(SimpleUser::class)->findOneBy(['email' => $dto->email]);
+        $existingDriver = $em->getRepository(Driver::class)->findOneBy(['email' => $dto->email]);
+        if ($existingSimple || $existingDriver) {
+            return $this->json([
+                'error' => 'email_already_registered',
+                'message' => 'An account already exists for this email address.'
+            ], 409);
+        }
+
         try {
             // 1️⃣ Create Keycloak user
             $kcId = $kc->createUser($dto->username, $dto->email, $dto->password, [$dto->role]);
@@ -48,6 +58,11 @@ class AuthController extends AbstractController
 
             $em->persist($u);
             $em->flush();
+        } catch (UniqueConstraintViolationException $e) {
+            return $this->json([
+                'error' => 'email_already_registered',
+                'message' => 'An account already exists for this email address.'
+            ], 409);
         } catch (\Throwable $e) {
             return $this->json([
                 'error' => 'registration_failed',
@@ -108,21 +123,9 @@ public function login(Request $req, EM $em): JsonResponse
     // 3) Extract identities & roles
     $email = $payload['email'] ?? $payload['preferred_username'] ?? $username;
 
-    $realmRoles = array_map('strtoupper', $payload['realm_access']['roles'] ?? []);
-    $clientRoles = [];
-    if (!empty($payload['resource_access'])) {
-        foreach ($payload['resource_access'] as $clientData) {
-            if (!empty($clientData['roles'])) {
-                $clientRoles = array_merge($clientRoles, array_map('strtoupper', $clientData['roles']));
-            }
-        }
-    }
-
-    // 4) Whitelist + priority (ADMIN > DRIVER > USER)
+    $roleContext = $this->extractRoleContext($payload);
     $allowed = ['ADMIN', 'DRIVER', 'USER'];
-    $allRoles = array_values(array_unique(array_merge($realmRoles, $clientRoles)));
-    $onlyAllowed = array_values(array_intersect($allowed, $allRoles));
-    $role = $onlyAllowed[0] ?? 'USER';
+    $role = $roleContext['preferred'][0] ?? 'USER';
 
     // 5) DB override if valid
     $user = $em->getRepository(\App\Entity\SimpleUser::class)->findOneBy(['email' => $email]);
@@ -131,11 +134,22 @@ public function login(Request $req, EM $em): JsonResponse
     if ($user && $user->getRole()) {
         $dbRole = strtoupper($user->getRole());
         if (in_array($dbRole, $allowed, true)) {
-            $role = $dbRole;
+            $priority = array_flip($allowed);
+            if ($priority[$role] < $priority[$dbRole]) {
+                // Token role outranks stored role – upgrade local record
+                $user->setRole($role);
+                $em->flush();
+                $dbRole = $role;
+            } else {
+                $role = $dbRole;
+            }
+        } else {
+            $user->setRole($role);
+            $em->flush();
         }
     }
 
-    if (!$user) {
+    if (!$user && $role === 'DRIVER') {
         $driver = $em->getRepository(\App\Entity\Driver::class)->findOneBy(['email' => $email]);
         if ($driver) {
             $driverRole = strtoupper($driver->getRole() ?? 'DRIVER');
@@ -149,10 +163,10 @@ public function login(Request $req, EM $em): JsonResponse
 
     // ---------- TEMP DEBUG (remove after one test) ----------
     error_log('[LOGIN DEBUG] email='.$email.
-        ' realmRoles='.json_encode($realmRoles).
-        ' clientRoles='.json_encode($clientRoles).
-        ' allRoles='.json_encode($allRoles).
-        ' onlyAllowed='.json_encode($onlyAllowed).
+        ' realmRoles='.json_encode($roleContext['realm']).
+        ' clientRoles='.json_encode($roleContext['client']).
+        ' allRoles='.json_encode($roleContext['all']).
+        ' onlyAllowed='.json_encode($roleContext['preferred']).
         ' pickedRole='.$role.
         ' dbRole='.(isset($dbRole)?$dbRole:'(none)'));
     // --------------------------------------------------------
@@ -174,10 +188,10 @@ public function login(Request $req, EM $em): JsonResponse
         ],
         // TEMP: include debug once; delete after confirming
         'debug' => [
-            'realmRoles' => $realmRoles,
-            'clientRoles' => $clientRoles,
-            'allRoles' => $allRoles,
-            'onlyAllowed' => $onlyAllowed,
+            'realmRoles' => $roleContext['realm'],
+            'clientRoles' => $roleContext['client'],
+            'allRoles' => $roleContext['all'],
+            'onlyAllowed' => $roleContext['preferred'],
             'pickedRole' => $role,
         ],
     ]);
@@ -245,28 +259,42 @@ public function getProfile(Request $request, EM $em): JsonResponse
         $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $username]);
     }
 
-    $isDriver = false;
+    $payload = $this->extractJwtPayload($request);
+    $roleContext = $this->extractRoleContext($payload);
+    $tokenRole = $roleContext['preferred'][0] ?? 'USER';
+    $resolvedEmail = $email ?? $payload['email'] ?? $username;
+    $hasDriverRole = in_array('DRIVER', $roleContext['all'], true);
+
     if (!$user) {
-        $payload = $this->extractJwtPayload($request);
-        $resolvedEmail = $email ?? $payload['email'] ?? $username;
-        $driver = $em->getRepository(Driver::class)->findOneBy(['email' => $resolvedEmail]);
-
-        if (!$driver) {
-            $driver = new Driver();
-            $driver->setEmail($resolvedEmail);
-            $driver->setRole('DRIVER');
-            $driver->setKeycloakId($payload['sub'] ?? $resolvedEmail ?? uniqid('kc_', true));
-            $driver->setFirstName($payload['given_name'] ?? null);
-            $driver->setLastName($payload['family_name'] ?? null);
-            $driver->setAddress($payload['address'] ?? null);
-            $driver->setAvailability(false);
-            $em->persist($driver);
+        if ($hasDriverRole) {
+            $driver = $em->getRepository(Driver::class)->findOneBy(['email' => $resolvedEmail]);
+            if (!$driver) {
+                $driver = new Driver();
+                $driver->setEmail($resolvedEmail);
+                $driver->setRole('DRIVER');
+                $driver->setKeycloakId($payload['sub'] ?? $resolvedEmail ?? uniqid('kc_', true));
+                $driver->setFirstName($payload['given_name'] ?? null);
+                $driver->setLastName($payload['family_name'] ?? null);
+                $driver->setAddress($payload['address'] ?? null);
+                $driver->setAvailability(false);
+                $em->persist($driver);
+                $em->flush();
+            }
+            $user = $driver;
+        } else {
+            $simple = new SimpleUser();
+            $simple->setEmail($resolvedEmail);
+            $simple->setRole($tokenRole);
+            $simple->setKeycloakId($payload['sub'] ?? $resolvedEmail ?? uniqid('kc_', true));
+            $simple->setFirstName($payload['given_name'] ?? null);
+            $simple->setLastName($payload['family_name'] ?? null);
+            $em->persist($simple);
             $em->flush();
+            $user = $simple;
         }
-
-        $user = $driver;
-        $isDriver = true;
     }
+
+    $isDriver = $user instanceof Driver;
 
     return $this->json([
         'id' => $user->getId(),
@@ -276,7 +304,7 @@ public function getProfile(Request $request, EM $em): JsonResponse
         'profilePhoto' => $user->getProfilePhoto(),
         'address' => $user->getAddress(),
         'birthDate' => $user->getBirthDate()?->format('Y-m-d'),
-        'role' => $isDriver ? ($user->getRole() ?? 'DRIVER') : $user->getRole(),
+        'role' => $isDriver ? ($user->getRole() ?? 'DRIVER') : ($user->getRole() ?? $tokenRole),
     ]);
 }
 
@@ -296,27 +324,45 @@ public function updateProfile(Request $req, EM $em): JsonResponse
         $user = $em->getRepository(\App\Entity\User::class)->findOneBy(['email' => $username]);
     }
 
-    $isDriver = false;
+    $payload = $this->extractJwtPayload($req);
+    $roleContext = $this->extractRoleContext($payload);
+    $tokenRole = $roleContext['preferred'][0] ?? 'USER';
+    $resolvedEmail = $email ?? $payload['email'] ?? $username;
+    $hasDriverRole = in_array('DRIVER', $roleContext['all'], true);
+
+    $isDriver = $user instanceof Driver;
     if (!$user) {
-        $payload = $this->extractJwtPayload($req);
-        $resolvedEmail = $email ?? $payload['email'] ?? $username;
-        $driver = $em->getRepository(Driver::class)->findOneBy(['email' => $resolvedEmail]);
+        if ($hasDriverRole) {
+            $driver = $em->getRepository(Driver::class)->findOneBy(['email' => $resolvedEmail]);
 
-        if (!$driver) {
-            $driver = new Driver();
-            $driver->setEmail($resolvedEmail);
-            $driver->setRole('DRIVER');
-            $driver->setKeycloakId($payload['sub'] ?? $resolvedEmail ?? uniqid('kc_', true));
-            $driver->setFirstName($payload['given_name'] ?? null);
-            $driver->setLastName($payload['family_name'] ?? null);
-            $driver->setAddress($payload['address'] ?? null);
-            $driver->setAvailability(false);
-            $em->persist($driver);
+            if (!$driver) {
+                $driver = new Driver();
+                $driver->setEmail($resolvedEmail);
+                $driver->setRole('DRIVER');
+                $driver->setKeycloakId($payload['sub'] ?? $resolvedEmail ?? uniqid('kc_', true));
+                $driver->setFirstName($payload['given_name'] ?? null);
+                $driver->setLastName($payload['family_name'] ?? null);
+                $driver->setAddress($payload['address'] ?? null);
+                $driver->setAvailability(false);
+                $em->persist($driver);
+                $em->flush();
+            }
+
+            $user = $driver;
+            $isDriver = true;
+        } else {
+            $simple = new SimpleUser();
+            $simple->setEmail($resolvedEmail);
+            $simple->setRole($tokenRole);
+            $simple->setKeycloakId($payload['sub'] ?? $resolvedEmail ?? uniqid('kc_', true));
+            $simple->setFirstName($payload['given_name'] ?? null);
+            $simple->setLastName($payload['family_name'] ?? null);
+            $em->persist($simple);
             $em->flush();
-        }
 
-        $user = $driver;
-        $isDriver = true;
+            $user = $simple;
+            $isDriver = false;
+        }
     }
 
     $data = json_decode($req->getContent(), true) ?? [];
@@ -344,7 +390,7 @@ public function updateProfile(Request $req, EM $em): JsonResponse
             'address' => $user->getAddress(),
             'birthDate' => $user->getBirthDate()?->format('Y-m-d'),
             'profilePhoto' => $user->getProfilePhoto(),
-            'role' => $isDriver ? ($user->getRole() ?? 'DRIVER') : $user->getRole(),
+            'role' => $user->getRole() ?? ($isDriver ? 'DRIVER' : $tokenRole ?? 'USER'),
         ],
     ]);
 }
@@ -459,5 +505,36 @@ private function extractJwtPayload(Request $request): array
     } catch (\Throwable $e) {
         return [];
     }
+}
+
+private function extractRoleContext(?array $payload): array
+{
+    $payload = $payload ?? [];
+
+    $realmRoles = array_map('strtoupper', $payload['realm_access']['roles'] ?? []);
+    $clientRoles = [];
+    if (!empty($payload['resource_access'])) {
+        foreach ($payload['resource_access'] as $clientData) {
+            if (!empty($clientData['roles'])) {
+                $clientRoles = array_merge($clientRoles, array_map('strtoupper', $clientData['roles']));
+            }
+        }
+    }
+
+    $allRoles = array_values(array_unique(array_merge($realmRoles, $clientRoles)));
+    $allowed = ['ADMIN', 'DRIVER', 'USER'];
+    $preferred = [];
+    foreach ($allowed as $candidate) {
+        if (in_array($candidate, $allRoles, true)) {
+            $preferred[] = $candidate;
+        }
+    }
+
+    return [
+        'realm' => $realmRoles,
+        'client' => $clientRoles,
+        'all' => $allRoles,
+        'preferred' => $preferred,
+    ];
 }
 }

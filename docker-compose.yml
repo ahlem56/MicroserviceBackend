@@ -1,14 +1,11 @@
-# ⚙️ Docker Compose for SpeedyGo Microservices
-# Version is optional in newer Docker versions
-# version: '3.9'
-
 services:
   # -------------------------------------------------
-  # 🗄 PostgreSQL (for Symfony User Service)
+  # 🗄️ PostgreSQL Database
   # -------------------------------------------------
   db:
     image: postgres:15
     container_name: speedygo-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: symfony
       POSTGRES_PASSWORD: symfony
@@ -21,11 +18,27 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
+  # 🐇 RabbitMQ (optional, keep running for messaging)
+  # -------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
   # 🧩 Eureka Server
   # -------------------------------------------------
   eureka-server:
-    build: ./eureka-server
+    image: aminadaghari/eureka-server:latest
+    build:
+      context: ./eureka-server
     container_name: eureka-server
+    restart: unless-stopped
     ports:
       - "8761:8761"
     networks:
@@ -35,8 +48,11 @@ services:
   # ⚙️ Spring Cloud Config Server
   # -------------------------------------------------
   config-server:
-    build: ./config-server
+    image: aminadaghari/config-server:latest
+    build:
+      context: ./config-server
     container_name: config-server
+    restart: unless-stopped
     ports:
       - "8888:8888"
     volumes:
@@ -52,10 +68,11 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:25.0.2
     container_name: keycloak
+    restart: unless-stopped
     environment:
-      - KEYCLOAK_ADMIN=admin
-      - KEYCLOAK_ADMIN_PASSWORD=admin
-      - KC_DB=dev-file
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: dev-file
     command:
       - start-dev
       - --http-port=8080
@@ -64,6 +81,8 @@ services:
       - ./keycloak:/opt/keycloak/data/import
     ports:
       - "8080:8080"
+    depends_on:
+      - db
     networks:
       - speedygo-network
 
@@ -71,48 +90,34 @@ services:
   # 👤 Symfony User Service (static route)
   # -------------------------------------------------
   user-service:
+    image: aminadaghari/user-service:latest
     build:
       context: ./speedygo-user-service
     container_name: speedygo-user-service
+    restart: unless-stopped
     depends_on:
+      - db
       - keycloak
       - eureka-server
-      - db
     ports:
       - "8084:8084"
     volumes:
-      - ./speedygo-user-service/app:/var/www/html/app   # ✅ correct folder mapping
-    networks:
-      - speedygo-network
-
-
-  # -------------------------------------------------
-  # 🚗 Trip Microservice (Eureka registered + persistent H2)
-  # -------------------------------------------------
-  trip-service:
-    build: ./Trip
-    container_name: trip-service
-    depends_on:
-      - keycloak
-      - eureka-server
-      - config-server
-      - user-service
-    ports:
-      - "8082:8082"
+      - ./speedygo-user-service/app:/var/www/html/app
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
-    volumes:
-      - tripdata:/data       # ✅ Persistent H2 database
+      APP_ENV: prod
+      DATABASE_URL: 'pgsql://symfony:symfony@db:5432/speedygo_user?serverVersion=15&charset=utf8'
     networks:
       - speedygo-network
 
-
   # -------------------------------------------------
-  # 🎉 Event Microservice (Spring Boot + Eureka)
+  # 🎉 Event Microservice (Spring Boot)
   # -------------------------------------------------
   event-service:
-    build: ./demo
+    image: aminadaghari/event-service:latest
+    build:
+      context: ./demo
     container_name: event-service
+    restart: unless-stopped
     depends_on:
       - keycloak
       - eureka-server
@@ -121,43 +126,31 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      SPRING_PROFILES_ACTIVE: docker
     volumes:
-      - eventdata:/data   
+      - eventdata:/data
     networks:
       - speedygo-network
 
   # -------------------------------------------------
-  # 🌐 API Gateway (Dynamic + Static routing)
+  # 🌐 API Gateway (Spring Cloud Gateway)
   # -------------------------------------------------
   api-gateway:
-    build: ./api-gateway
+    image: aminadaghari/api-gateway:latest
+    build:
+      context: ./api-gateway
     container_name: api-gateway
+    restart: unless-stopped
     depends_on:
       - eureka-server
       - keycloak
       - config-server
       - user-service
-      - trip-service
+      - event-service
     ports:
       - "8090:8090"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
-    networks:
-      - speedygo-network
-
-  # -------------------------------------------------
-  # 🎨 Frontend (Angular Monolith)
-  # -------------------------------------------------
-  frontend:
-    build:
-      context: ../../Frontend/MicroserviceFrontend
-    container_name: speedygo-frontend
-    depends_on:
-      - api-gateway
-      - keycloak
-    ports:
-      - "4200:80"
+      SPRING_PROFILES_ACTIVE: docker
     networks:
       - speedygo-network
 
@@ -166,11 +159,8 @@ services:
 # -------------------------------------------------
 volumes:
   pgdata:
-  tripdata:     # ✅ Added for Trip persistence
-  eventdata:    # ✅ Added for Event persistence
+  eventdata:
 
 networks:
   speedygo-network:
     driver: bridge
-
-  

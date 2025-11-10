@@ -1,0 +1,13 @@
+{
+    "require": {
+        "symfony/orm-pack": "^2.4",
+        "symfony/maker-bundle": "^1.64",
+        "symfony/security-bundle": "^7.3",
+        "symfony/serializer": "^7.3",
+        "symfony/validator": "^7.3",
+        "lexik/jwt-authentication-bundle": "3.0",
+        "web-token/jwt-framework": "^4.0",
+        "nelmio/cors-bundle": "2.5",
+        "symfony/http-client": "^7.3"
+    }
+}

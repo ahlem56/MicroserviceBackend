@@ -1,0 +1,12 @@
+controllers:
+    resource:
+        path: ../src/Controller/
+        namespace: App\Controller
+    type: attribute
+# Allow OPTIONS requests to be handled globally
+options_cors:
+  path: /{all}
+  controller: Symfony\Bundle\FrameworkBundle\Controller\RedirectController::urlRedirectAction
+  requirements:
+    all: ".+"
+  methods: [OPTIONS]
