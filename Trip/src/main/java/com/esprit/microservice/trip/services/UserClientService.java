@@ -1,5 +1,7 @@
 package com.esprit.microservice.trip.services;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -34,4 +36,34 @@ public class UserClientService {
         String profile = getUserProfile(jwtToken);
         return profile != null && profile.contains("\"role\":\"ADMIN\"");
     }
+
+
+    // ✅ Extract userId (or username) from profile JSON
+    public Integer extractUserId(String userProfileJson) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(userProfileJson);
+
+            if (root.has("id")) {
+                JsonNode idNode = root.get("id");
+                if (idNode.isInt()) {
+                    return idNode.asInt();
+                } else if (idNode.isTextual()) {
+                    return Integer.parseInt(idNode.asText());
+                }
+            } else if (root.has("userId")) {
+                JsonNode idNode = root.get("userId");
+                if (idNode.isInt()) {
+                    return idNode.asInt();
+                } else if (idNode.isTextual()) {
+                    return Integer.parseInt(idNode.asText());
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
 }

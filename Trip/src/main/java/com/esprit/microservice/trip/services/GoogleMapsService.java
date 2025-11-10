@@ -11,7 +11,7 @@ import java.util.Map;
 
 @Service
 public class GoogleMapsService {
-    @Value("${google.api.key}")
+    @Value("${google.api.key:}")
     private String apiKey;
 
     private final RestTemplate restTemplate = new RestTemplate();
