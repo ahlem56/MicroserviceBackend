@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => '__root__',
-        'pretty_version' => 'dev-Ahlem',
-        'version' => 'dev-Ahlem',
-        'reference' => '2ab224ee523d23db07dbfdec147df96524fd3221',
+        'pretty_version' => '1.0.0+no-version-set',
+        'version' => '1.0.0.0',
+        'reference' => null,
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -11,9 +11,9 @@
     ),
     'versions' => array(
         '__root__' => array(
-            'pretty_version' => 'dev-Ahlem',
-            'version' => 'dev-Ahlem',
-            'reference' => '2ab224ee523d23db07dbfdec147df96524fd3221',
+            'pretty_version' => '1.0.0+no-version-set',
+            'version' => '1.0.0.0',
+            'reference' => null,
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -592,6 +592,15 @@
             'reference' => '8dc648e159e9bac02b703b9fbd937f19ba13d07c',
             'type' => 'library',
             'install_path' => __DIR__ . '/../symfony/routing',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'symfony/runtime' => array(
+            'pretty_version' => 'v7.3.4',
+            'version' => '7.3.4.0',
+            'reference' => '3550e2711e30bfa5d808514781cd52d1cc1d9e9f',
+            'type' => 'composer-plugin',
+            'install_path' => __DIR__ . '/../symfony/runtime',
             'aliases' => array(),
             'dev_requirement' => false,
         ),

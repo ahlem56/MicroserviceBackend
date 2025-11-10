@@ -1,6 +1,4 @@
 # ⚙️ Docker Compose for SpeedyGo Microservices
-# Version is optional in newer Docker versions
-# version: '3.9'
 
 services:
   # -------------------------------------------------
@@ -17,6 +15,23 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
+  # 🗄 MySQL (for Parcel Microservice)
+  # -------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: speedygo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: MSVspeedyGo
+      MYSQL_ALLOW_EMPTY_PASSWORD: "no"
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysqldata:/var/lib/mysql
     networks:
       - speedygo-network
 
@@ -68,7 +83,7 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
-  # 👤 Symfony User Service (static route)
+  # 👤 Symfony User Service (PHP)
   # -------------------------------------------------
   user-service:
     build:
@@ -81,13 +96,12 @@ services:
     ports:
       - "8084:8084"
     volumes:
-      - ./speedygo-user-service/app:/var/www/html/app   # ✅ correct folder mapping
+      - ./speedygo-user-service/app:/var/www/html/app
     networks:
       - speedygo-network
 
-
   # -------------------------------------------------
-  # 🚗 Trip Microservice (Eureka registered + persistent H2)
+  # 🚗 Trip Microservice (Spring Boot)
   # -------------------------------------------------
   trip-service:
     build: ./Trip
@@ -102,12 +116,55 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
     volumes:
-      - tripdata:/data       # ✅ Persistent H2 database
+      - tripdata:/data
     networks:
       - speedygo-network
 
   # -------------------------------------------------
-  # 🌐 API Gateway (Dynamic + Static routing)
+  # 📦 Parcel Microservice (Spring Boot + MySQL)
+  # -------------------------------------------------
+  parcel-service:
+    build:
+      context: ./parcel
+      dockerfile: Dockerfile
+    container_name: parcel-service
+    depends_on:
+      - mysql
+      - eureka-server
+      - config-server
+      - keycloak
+      - user-service
+    ports:
+      - "8089:8089"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+      # --- DB ---
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/MSVspeedyGo?createDatabaseIfNotExist=true&useUnicode=true&serverTimezone=UTC
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+
+      # --- Eureka ---
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+
+      # --- Config Server ---
+      - SPRING_CONFIG_IMPORT=configserver:http://config-server:8888
+
+      # --- Keycloak ---
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://keycloak:8080/realms/SpeedyGo
+
+      # --- User Service URL ---
+      - USER_SERVICE_URL=http://user-service:8084
+
+      # --- Server info ---
+      - SERVER_PORT=8089
+      - SERVER_SERVLET_CONTEXT_PATH=/examen
+
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
+  # 🌐 API Gateway
   # -------------------------------------------------
   api-gateway:
     build: ./api-gateway
@@ -118,6 +175,7 @@ services:
       - config-server
       - user-service
       - trip-service
+      - parcel-service
     ports:
       - "8090:8090"
     environment:
@@ -130,7 +188,8 @@ services:
 # -------------------------------------------------
 volumes:
   pgdata:
-  tripdata:     # ✅ Added for Trip persistence
+  tripdata:
+  mysqldata:
 
 networks:
   speedygo-network:

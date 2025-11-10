@@ -2,7 +2,9 @@
 
 services:
   app:
-    build: .
+    build:
+      context: ./speedygo-user-service
+      dockerfile: Dockerfile
     container_name: speedygo-user-app
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -12,7 +14,7 @@ services:
       KEYCLOAK_ISSUER: "http://localhost:8080/realms/SpeedyGo"
       KEYCLOAK_JWKS_URL: "http://host.docker.internal:8080/realms/SpeedyGo/protocol/openid-connect/certs"
     volumes:
-      - ./:/var/www/html
+      - ./speedygo-user-service:/var/www/html
     depends_on:
       - db
     networks:
@@ -24,8 +26,8 @@ services:
     ports:
       - "8084:80"
     volumes:
-      - ./:/var/www/html
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./speedygo-user-service:/var/www/html
+      - ./speedygo-user-service/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - app
     networks:

@@ -8,6 +8,12 @@
         "lexik/jwt-authentication-bundle": "3.0",
         "web-token/jwt-framework": "^4.0",
         "nelmio/cors-bundle": "2.5",
-        "symfony/http-client": "^7.3"
+        "symfony/http-client": "^7.3",
+        "symfony/runtime": "^7.3"
+    },
+    "config": {
+        "allow-plugins": {
+            "symfony/runtime": true
+        }
     }
 }

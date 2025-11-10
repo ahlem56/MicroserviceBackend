@@ -22,6 +22,7 @@ class ComposerStaticInit0aee8bdbc54e08743c69b2bf10af5dd5
     public static $prefixLengthsPsr4 = array (
         'S' => 
         array (
+            'Symfony\\Runtime\\Symfony\\Component\\' => 34,
             'Symfony\\Polyfill\\Php84\\' => 23,
             'Symfony\\Polyfill\\Php83\\' => 23,
             'Symfony\\Polyfill\\Mbstring\\' => 26,
@@ -43,6 +44,7 @@ class ComposerStaticInit0aee8bdbc54e08743c69b2bf10af5dd5
             'Symfony\\Component\\Security\\Http\\' => 32,
             'Symfony\\Component\\Security\\Csrf\\' => 32,
             'Symfony\\Component\\Security\\Core\\' => 32,
+            'Symfony\\Component\\Runtime\\' => 26,
             'Symfony\\Component\\Routing\\' => 26,
             'Symfony\\Component\\PropertyInfo\\' => 31,
             'Symfony\\Component\\PropertyAccess\\' => 33,
@@ -114,6 +116,10 @@ class ComposerStaticInit0aee8bdbc54e08743c69b2bf10af5dd5
     );
 
     public static $prefixDirsPsr4 = array (
+        'Symfony\\Runtime\\Symfony\\Component\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/symfony/runtime/Internal',
+        ),
         'Symfony\\Polyfill\\Php84\\' => 
         array (
             0 => __DIR__ . '/..' . '/symfony/polyfill-php84',
@@ -197,6 +203,10 @@ class ComposerStaticInit0aee8bdbc54e08743c69b2bf10af5dd5
         'Symfony\\Component\\Security\\Core\\' => 
         array (
             0 => __DIR__ . '/..' . '/symfony/security-core',
+        ),
+        'Symfony\\Component\\Runtime\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/symfony/runtime',
         ),
         'Symfony\\Component\\Routing\\' => 
         array (
