@@ -61,9 +61,9 @@ public class Trip {
     private Integer numberOfPassengers = 1;
 
     // Relations avec autres microservices : stocker uniquement l’ID
-    private Integer driverId;       // viendra du driver-service
-    private Integer userId;         // viendra du user-service
-    private Integer vehicleId;      // viendra du vehicle-service
+    private Integer driverId;
+    private Integer userId;
+    private Integer vehicleId;
 
     private Boolean readyForDriverRating = false;
     private Boolean readyForPassengerRating = false;

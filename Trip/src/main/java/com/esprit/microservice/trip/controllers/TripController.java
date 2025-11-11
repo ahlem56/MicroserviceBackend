@@ -30,15 +30,50 @@ public class TripController {
         this.googleMapsService = googleMapsService;
     }
 
-    // 👁️ Accessible à ADMIN ou USER
     @GetMapping("/getAllTrips")
     @PreAuthorize("hasAnyRole('ADMIN', 'USER')")
     public List<Trip> getAllTrips() {
         return tripService.getAllTrips();
     }
 
-    // ✈️ Accessible uniquement à USER
 
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','USER','DRIVER')")
+    public ResponseEntity<?> getTripById(@PathVariable Integer id) {
+        return tripService.getTripById(id)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body("Trip not found with id " + id));
+    }
+
+
+    @PutMapping("/update/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','USER')")
+    public ResponseEntity<?> updateTrip(
+            @PathVariable Integer id,
+            @Valid @RequestBody Trip tripDetails) {
+
+        try {
+            Trip updated = tripService.updateTrip(id, tripDetails);
+            return ResponseEntity.ok(updated);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','USER')")
+    public ResponseEntity<?> deleteTrip(@PathVariable Integer id) {
+        try {
+            tripService.deleteTrip(id);
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body("Trip not found with id " + id);
+        }
+    }
+
+    @PreAuthorize("hasAnyRole('USER')")
     @PostMapping("/createTrip")
     public ResponseEntity<?> createTrip(
             @Valid @RequestBody Trip trip,
@@ -47,11 +82,9 @@ public class TripController {
         String jwtToken = authorizationHeader.replace("Bearer ", "");
 
         try {
-            // ✅ Fetch user profile JSON from User Service (secured endpoint)
             String userProfileJson = userClientService.getUserProfile(jwtToken);
             System.out.println("✅ User Profile: " + userProfileJson);
 
-            // ✅ Extract user ID from the profile JSON (adapt key based on your UserService response)
             Integer userId = userClientService.extractUserId(userProfileJson);
             trip.setUserId(userId);
         } catch (Exception e) {
@@ -59,14 +92,12 @@ public class TripController {
                     .body("❌ Failed to get user profile: " + e.getMessage());
         }
 
-        // ✅ Calculate trip details (duration, price)
         Map<String, Object> tripDetails = googleMapsService.getTripDetails(
                 trip.getTripDeparture(), trip.getTripDestination());
 
         trip.setTripDuration((String) tripDetails.get("duration"));
         trip.setTripPrice(calculatePrice((String) tripDetails.get("distance")));
 
-        // ✅ Save with assigned userId & driverId
         Trip createdTrip = tripService.createTrip(trip);
         return ResponseEntity.ok(createdTrip);
     }
@@ -77,7 +108,6 @@ public class TripController {
         return BigDecimal.valueOf(3.0 + distanceKm * 1.2);
     }
 
-    // ✅ Accessible à ADMIN ou DRIVER
     @PutMapping("/confirmTrip/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
     public ResponseEntity<?> confirmTrip(@PathVariable Integer id) {
@@ -88,7 +118,6 @@ public class TripController {
         return ResponseEntity.ok(trip);
     }
 
-    // ✅ Accessible à ADMIN ou DRIVER
     @PutMapping("/declineTrip/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
     public ResponseEntity<?> declineTrip(@PathVariable Integer id) {
@@ -100,9 +129,8 @@ public class TripController {
     }
 
 
-    // ✅ Get trips for a specific driver
     @GetMapping("/getTripsByDriver/{driverId}")
-   // @PreAuthorize("hasAnyRole('DRIVER','ADMIN')")
+   @PreAuthorize("hasAnyRole('DRIVER','ADMIN')")
     public ResponseEntity<List<Trip>> getTripsByDriver(@PathVariable Integer driverId) {
         List<Trip> trips = tripService.getTripsByDriver(driverId);
         if (trips.isEmpty()) {
@@ -113,9 +141,8 @@ public class TripController {
 
 
 
-    // ✅ Get trips for a specific user (Trip History)
     @GetMapping("/getTripsByUser/{userId}")
-// @PreAuthorize("hasAnyRole('USER','ADMIN')")
+@PreAuthorize("hasAnyRole('USER','ADMIN')")
     public ResponseEntity<List<Trip>> getTripsByUser(@PathVariable Integer userId) {
         List<Trip> trips = tripService.getTripsByUser(userId);
         if (trips.isEmpty()) {
