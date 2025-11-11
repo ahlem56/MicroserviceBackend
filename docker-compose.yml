@@ -1,6 +1,6 @@
-services:
+﻿services:
   # -------------------------------------------------
-  # 🗄️ PostgreSQL Database
+  # 🗄️ PostgreSQL Database (for Symfony User Service)
   # -------------------------------------------------
   db:
     image: postgres:15
@@ -18,7 +18,24 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
-  # 🐇 RabbitMQ (optional, keep running for messaging)
+  # 🐬 MySQL Database (for Reclamation Service)
+  # -------------------------------------------------
+  mysql:
+    image: mysql:8
+    container_name: mysql-reclamation
+    restart: unless-stopped
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: reclamation_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - reclamationdata:/var/lib/mysql
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
+  # 🐇 RabbitMQ (for messaging)
   # -------------------------------------------------
   rabbitmq:
     image: rabbitmq:3-management
@@ -34,7 +51,7 @@ services:
   # 🧩 Eureka Server
   # -------------------------------------------------
   eureka-server:
-    image: medmissaoui/eureka-server:latest
+    image: yassinezribi1/eureka-server:latest
     build:
       context: ./eureka-server
     container_name: eureka-server
@@ -48,7 +65,7 @@ services:
   # ⚙️ Spring Cloud Config Server
   # -------------------------------------------------
   config-server:
-    image: medmissaoui/config-server:latest
+    image: yassinezribi1/config-server:latest
     build:
       context: ./config-server
     container_name: config-server
@@ -87,10 +104,10 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
-  # 👤 Symfony User Service (static route)
+  # 👤 Symfony User Service
   # -------------------------------------------------
   user-service:
-    image: medmissaoui/user-service:latest
+    image: yassinezribi1/user-service:latest
     build:
       context: ./speedygo-user-service
     container_name: speedygo-user-service
@@ -113,7 +130,7 @@ services:
   # 🎉 Event Microservice (Spring Boot)
   # -------------------------------------------------
   event-service:
-    image: medmissaoui/event-service:latest
+    image: yassinezribi1/event-service:latest
     build:
       context: ./demo
     container_name: event-service
@@ -153,26 +170,38 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:mysql://db-mysql:3306/vehicule-db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: ""  # empty password
+      SPRING_DATASOURCE_PASSWORD: ""
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       KEYCLOAK_SERVER_URL: http://keycloak:8080
     networks:
       - speedygo-network
 
   # -------------------------------------------------
-  # 🗄️ MySQL Database for Vehicule Service
+  # 📨 Reclamation Microservice (Spring Boot)
   # -------------------------------------------------
-  db-mysql:
-    image: mysql:8.0
-    container_name: vehicule-db
+  reclamation-service:
+    image: yassinezribi1/reclamation-service:latest
+    build:
+      context: ./Reclamation
+    container_name: reclamation-service
     restart: unless-stopped
-    environment:
-      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-      MYSQL_DATABASE: vehicule-db
+    depends_on:
+      - mysql
+      - keycloak
+      - eureka-server
+      - config-server
+      - user-service
+      - rabbitmq
     ports:
-      - "3306:3306"
-    volumes:
-      - mysqldata:/var/lib/mysql
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/reclamation_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ""
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_RABBITMQ_HOST: rabbitmq
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
     networks:
       - speedygo-network
 
@@ -180,7 +209,7 @@ services:
   # 🌐 API Gateway (Spring Cloud Gateway)
   # -------------------------------------------------
   api-gateway:
-    image: medmissaoui/api-gateway:latest
+    image: yassinezribi1/api-gateway:latest
     build:
       context: ./api-gateway
     container_name: api-gateway
@@ -191,6 +220,8 @@ services:
       - config-server
       - user-service
       - event-service
+      - vehicule-service
+      - reclamation-service
     ports:
       - "8090:8090"
     environment:
@@ -205,6 +236,7 @@ volumes:
   pgdata:
   eventdata:
   mysqldata:
+  reclamationdata:
 
 networks:
   speedygo-network:
