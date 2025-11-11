@@ -60,7 +60,31 @@ class AuthController extends AbstractController
 #[Route('/auth/login', methods: ['POST'])]
 public function login(Request $req, EM $em): JsonResponse
 {
-    $data = json_decode($req->getContent(), true) ?? [];
+    // Accept JSON, form-urlencoded, or multipart bodies
+    $data = [];
+    try {
+        $raw = (string) $req->getContent();
+        if ($raw !== '') {
+            $parsed = json_decode($raw, true);
+            if (is_array($parsed)) {
+                $data = $parsed;
+            }
+        }
+    } catch (\Throwable $ignored) {}
+
+    if (!$data) {
+        try {
+            // Symfony will parse JSON as well starting SF 6.3 via toArray()
+            $data = $req->toArray();
+        } catch (\Throwable $ignored) {
+            $data = [];
+        }
+    }
+
+    if (!$data) {
+        $data = $req->request->all();
+    }
+
     $username = $data['username'] ?? $data['email'] ?? '';
     $password = $data['password'] ?? '';
 
@@ -374,4 +398,29 @@ public function listAllUsers(EM $em): JsonResponse
     $users = $em->getRepository(\App\Entity\User::class)->findAll();
     return $this->json($users);
 }
+
+    #[Route('/api/admin/drivers', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function listAllDrivers(EM $em): JsonResponse
+    {
+        $drivers = $em->getRepository(\App\Entity\Driver::class)->findAll();
+
+        $result = array_map(function ($d) {
+            return [
+                'id' => $d->getId(),
+                'firstName' => $d->getFirstName(),
+                'lastName' => $d->getLastName(),
+                'email' => $d->getEmail(),
+                'role' => $d->getRole() ?? 'DRIVER',
+                'availability' => method_exists($d, 'isAvailable') ? $d->isAvailable() : null,
+                'licenseNumber' => method_exists($d, 'getLicenseNumber') ? $d->getLicenseNumber() : null,
+                'insuranceDetails' => method_exists($d, 'getInsuranceDetails') ? $d->getInsuranceDetails() : null,
+                'performanceRating' => method_exists($d, 'getPerformanceRating') ? $d->getPerformanceRating() : null,
+                'schedule' => method_exists($d, 'getSchedule') ? $d->getSchedule() : null,
+                'profilePhoto' => $d->getProfilePhoto(),
+            ];
+        }, $drivers);
+
+        return $this->json($result);
+    }
 }

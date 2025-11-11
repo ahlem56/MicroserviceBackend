@@ -34,7 +34,7 @@ services:
   # 🧩 Eureka Server
   # -------------------------------------------------
   eureka-server:
-    image: aminadaghari/eureka-server:latest
+    image: medmissaoui/eureka-server:latest
     build:
       context: ./eureka-server
     container_name: eureka-server
@@ -48,7 +48,7 @@ services:
   # ⚙️ Spring Cloud Config Server
   # -------------------------------------------------
   config-server:
-    image: aminadaghari/config-server:latest
+    image: medmissaoui/config-server:latest
     build:
       context: ./config-server
     container_name: config-server
@@ -90,7 +90,7 @@ services:
   # 👤 Symfony User Service (static route)
   # -------------------------------------------------
   user-service:
-    image: aminadaghari/user-service:latest
+    image: medmissaoui/user-service:latest
     build:
       context: ./speedygo-user-service
     container_name: speedygo-user-service
@@ -113,7 +113,7 @@ services:
   # 🎉 Event Microservice (Spring Boot)
   # -------------------------------------------------
   event-service:
-    image: aminadaghari/event-service:latest
+    image: medmissaoui/event-service:latest
     build:
       context: ./demo
     container_name: event-service
@@ -133,10 +133,54 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
+  # 🚗 Vehicule Microservice (Spring Boot + MySQL)
+  # -------------------------------------------------
+  vehicule-service:
+    image: medmissaoui/vehicule-service:latest
+    build:
+      context: ./vehicule
+    container_name: vehicule-service
+    restart: unless-stopped
+    depends_on:
+      - db-mysql
+      - keycloak
+      - eureka-server
+      - config-server
+      - user-service
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://db-mysql:3306/vehicule-db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ""  # empty password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
+  # 🗄️ MySQL Database for Vehicule Service
+  # -------------------------------------------------
+  db-mysql:
+    image: mysql:8.0
+    container_name: vehicule-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: vehicule-db
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysqldata:/var/lib/mysql
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
   # 🌐 API Gateway (Spring Cloud Gateway)
   # -------------------------------------------------
   api-gateway:
-    image: aminadaghari/api-gateway:latest
+    image: medmissaoui/api-gateway:latest
     build:
       context: ./api-gateway
     container_name: api-gateway
@@ -160,6 +204,7 @@ services:
 volumes:
   pgdata:
   eventdata:
+  mysqldata:
 
 networks:
   speedygo-network:

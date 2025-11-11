@@ -27,18 +27,49 @@ class KeycloakGuardAuthenticator extends AbstractAuthenticator
 
     public function supports(Request $request): ?bool
     {
-        return $request->headers->has('Authorization');
+        // Accept a variety of places for tokens to reduce frontend coupling
+        return $request->headers->has('Authorization')
+            || $request->headers->has('X-Auth-Token')
+            || $request->headers->has('Token')
+            || $request->headers->has('Authentication')
+            || $request->cookies->has('token')
+            || $request->query->has('access_token');
     }
 
     public function authenticate(Request $request): Passport
     {
         $authHeader = $request->headers->get('Authorization');
-        error_log('[AUTH DEBUG] Authorization header=' . ($authHeader ?? '(none)'));
-        if (!$authHeader || !str_starts_with($authHeader, 'Bearer ')) {
-            throw new AuthenticationException('No Bearer token found');
+        $fallbackHeader = $request->headers->get('X-Auth-Token')
+            ?? $request->headers->get('Token')
+            ?? $request->headers->get('Authentication');
+        $cookieToken = $request->cookies->get('token');
+        $queryToken = $request->query->get('access_token');
+
+        $token = null;
+        if ($authHeader) {
+            $trimmed = trim($authHeader);
+            if (str_starts_with($trimmed, 'Bearer ')) {
+                $token = substr($trimmed, 7);
+            } elseif (str_starts_with($trimmed, 'JWT ')) {
+                $token = substr($trimmed, 4);
+            } elseif (str_starts_with($trimmed, 'Token ')) {
+                $token = substr($trimmed, 6);
+            } else {
+                // Treat entire header as raw JWT
+                $token = $trimmed;
+            }
+        } elseif ($fallbackHeader) {
+            $token = trim($fallbackHeader);
+        } elseif ($cookieToken) {
+            $token = trim($cookieToken);
+        } elseif ($queryToken) {
+            $token = trim($queryToken);
         }
 
-        $token = substr($authHeader, 7);
+        if (!$token) {
+            throw new AuthenticationException('No JWT token found');
+        }
+
         $serializer = new CompactSerializer();
         $jws = $serializer->unserialize($token);
         $jwsHeader = $jws->getSignature(0)->getProtectedHeader();
