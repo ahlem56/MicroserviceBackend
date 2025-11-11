@@ -1,0 +1,22 @@
+﻿### IDE ###
+.idea/
+**/.idea/
+*.iml
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Maven ###
+**/target/
+.mvn/wrapper/maven-wrapper.jar
+
+### Node ###
+node_modules/
+
+### Composer / Symfony ###
+vendor/
+speedygo-user-service/var/
+
+### Logs ###
+*.log

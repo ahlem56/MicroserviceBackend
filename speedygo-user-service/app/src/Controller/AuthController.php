@@ -83,7 +83,30 @@ class AuthController extends AbstractController
 #[Route('/auth/login', methods: ['POST'])]
 public function login(Request $req, EM $em): JsonResponse
 {
-    $data = json_decode($req->getContent(), true) ?? [];
+    // Accept JSON, form-urlencoded, or multipart bodies
+    $data = [];
+    try {
+        $raw = (string) $req->getContent();
+        if ($raw !== '') {
+            $parsed = json_decode($raw, true);
+            if (is_array($parsed)) {
+                $data = $parsed;
+            }
+        }
+    } catch (\Throwable $ignored) {}
+
+    if (!$data) {
+        try {
+            $data = $req->toArray();
+        } catch (\Throwable $ignored) {
+            $data = [];
+        }
+    }
+
+    if (!$data) {
+        $data = $req->request->all();
+    }
+
     $username = $data['username'] ?? $data['email'] ?? '';
     $password = $data['password'] ?? '';
 
@@ -91,7 +114,6 @@ public function login(Request $req, EM $em): JsonResponse
         return $this->json(['error' => 'Missing username or password'], 400);
     }
 
-    // 1) Ask Keycloak
     try {
         $resp = $this->http->request(
             'POST',
@@ -115,19 +137,16 @@ public function login(Request $req, EM $em): JsonResponse
         return $this->json(['error' => 'Invalid credentials'], 401);
     }
 
-    // 2) Decode token
     $jwt = $resp['access_token'];
     $parts = explode('.', $jwt);
     $payload = json_decode(base64_decode($parts[1] ?? ''), true) ?? [];
 
-    // 3) Extract identities & roles
     $email = $payload['email'] ?? $payload['preferred_username'] ?? $username;
 
     $roleContext = $this->extractRoleContext($payload);
     $allowed = ['ADMIN', 'DRIVER', 'USER'];
     $role = $roleContext['preferred'][0] ?? 'USER';
 
-    // 5) DB override if valid
     $user = $em->getRepository(\App\Entity\SimpleUser::class)->findOneBy(['email' => $email]);
     $driver = null;
 
@@ -136,7 +155,6 @@ public function login(Request $req, EM $em): JsonResponse
         if (in_array($dbRole, $allowed, true)) {
             $priority = array_flip($allowed);
             if ($priority[$role] < $priority[$dbRole]) {
-                // Token role outranks stored role – upgrade local record
                 $user->setRole($role);
                 $em->flush();
                 $dbRole = $role;
@@ -153,23 +171,9 @@ public function login(Request $req, EM $em): JsonResponse
         $driver = $em->getRepository(\App\Entity\Driver::class)->findOneBy(['email' => $email]);
         if ($driver) {
             $driverRole = strtoupper($driver->getRole() ?? 'DRIVER');
-            if (in_array($driverRole, $allowed, true)) {
-                $role = $driverRole;
-            } else {
-                $role = 'DRIVER';
-            }
+            $role = in_array($driverRole, $allowed, true) ? $driverRole : 'DRIVER';
         }
     }
-
-    // ---------- TEMP DEBUG (remove after one test) ----------
-    error_log('[LOGIN DEBUG] email='.$email.
-        ' realmRoles='.json_encode($roleContext['realm']).
-        ' clientRoles='.json_encode($roleContext['client']).
-        ' allRoles='.json_encode($roleContext['all']).
-        ' onlyAllowed='.json_encode($roleContext['preferred']).
-        ' pickedRole='.$role.
-        ' dbRole='.(isset($dbRole)?$dbRole:'(none)'));
-    // --------------------------------------------------------
 
     $resolvedUser = $user ?? $driver;
     $resolvedId = $resolvedUser?->getId();
@@ -185,14 +189,6 @@ public function login(Request $req, EM $em): JsonResponse
             'lastName' => $resolvedUser?->getLastName(),
             'email' => $email,
             'profilePhoto' => $resolvedUser?->getProfilePhoto(),
-        ],
-        // TEMP: include debug once; delete after confirming
-        'debug' => [
-            'realmRoles' => $roleContext['realm'],
-            'clientRoles' => $roleContext['client'],
-            'allRoles' => $roleContext['all'],
-            'onlyAllowed' => $roleContext['preferred'],
-            'pickedRole' => $role,
         ],
     ]);
 }
