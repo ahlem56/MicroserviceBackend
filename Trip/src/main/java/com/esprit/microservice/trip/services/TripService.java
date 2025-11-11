@@ -1,5 +1,6 @@
 package com.esprit.microservice.trip.services;
 
+import com.esprit.microservice.trip.entities.ReservationStatus;
 import com.esprit.microservice.trip.entities.Trip;
 import com.esprit.microservice.trip.repositories.TripRepository;
 import org.springframework.stereotype.Service;
@@ -66,5 +67,12 @@ public class TripService {
 
     public List<Trip> getUpcomingTripsWithoutReminder(LocalDateTime start, LocalDateTime end) {
         return tripRepository.findByTripDateBetweenAndReminderSentFalse(start, end);
+    }
+
+    public Trip updateTripStatus(Integer id, ReservationStatus newStatus) {
+        Trip trip = tripRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Trip not found"));
+        trip.setReservationStatus(newStatus);
+        return tripRepository.save(trip); // merge existing entity
     }
 }

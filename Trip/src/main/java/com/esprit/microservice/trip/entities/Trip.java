@@ -32,7 +32,7 @@ public class Trip {
     private String tripDestination;
 
     @NotNull
-    @Future(message = "Trip date must be in the future")
+    //@Future(message = "Trip date must be in the future")
     private LocalDateTime tripDate;
 
     private String tripDuration;

@@ -110,13 +110,45 @@ public class TripController {
 
     @PutMapping("/confirmTrip/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
-    public ResponseEntity<?> confirmTrip(@PathVariable Integer id) {
-        Trip trip = tripService.getTripById(id)
-                .orElseThrow(() -> new RuntimeException("Trip not found"));
-        trip.setReservationStatus(ReservationStatus.CONFIRMED);
-        tripService.createTrip(trip);
-        return ResponseEntity.ok(trip);
+    public ResponseEntity<Trip> confirmTrip(@PathVariable Integer id) {
+        return tripService.getTripById(id)
+                .map(trip -> {
+                    trip.setReservationStatus(ReservationStatus.CONFIRMED);
+                    Trip updated = tripService.createTrip(trip);
+                    return ResponseEntity.ok(updated);
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
+
+
+
+    @PutMapping("/cancelTrip/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER', 'USER')")
+    public ResponseEntity<Trip> cancelTrip(@PathVariable Integer id) {
+        try {
+            Trip updated = tripService.updateTripStatus(id, ReservationStatus.CANCELLED);
+            return ResponseEntity.ok(updated);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+    }
+
+
+    @PutMapping("/completeTrip/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','DRIVER')")
+    public ResponseEntity<Trip> completeTrip(@PathVariable Integer id) {
+        return tripService.getTripById(id)
+                .map(trip -> {
+                    trip.setReservationStatus(ReservationStatus.COMPLETED);
+                    trip.setReadyForDriverRating(true);
+                    trip.setReadyForPassengerRating(true);
+                    Trip updated = tripService.createTrip(trip);
+                    return ResponseEntity.ok(updated);
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+    }
+
+
 
     @PutMapping("/declineTrip/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
