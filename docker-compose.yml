@@ -1,21 +1,21 @@
 # ⚙️ Docker Compose for SpeedyGo Microservices
-# version: '3.9'  # Optional for newer Docker versions
+# version: '3.9'
 
 services:
   # -------------------------------------------------
   # 🚙 Carpooling Microservice
   # -------------------------------------------------
   carpooling-service:
-    build: ./Carpooling
+    build: ./carpooling
     container_name: carpooling-service
     depends_on:
       mysql-carpooling:
-        condition: service_healthy   # ✅ Wait until DB is ready
-      keycloak:
-        condition: service_started
+        condition: service_healthy
+      config-server:
+        condition: service_healthy    # ✅ Wait until config-server is fully ready
       eureka-server:
         condition: service_started
-      config-server:
+      keycloak:
         condition: service_started
       user-service:
         condition: service_started
@@ -23,6 +23,8 @@ services:
       - "8086:8086"
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      SPRING_APPLICATION_NAME: carpooling
     networks:
       - speedygo-network
 
@@ -38,18 +40,19 @@ services:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_DATABASE: carpooling_db
     ports:
-      - "3307:3306"
+      - "3307:3306"     # ✅ garde 3307 si ton port 3306 est déjà pris localement
     volumes:
       - mysqlcarpooldata:/var/lib/mysql
     networks:
       - speedygo-network
-    healthcheck:                     # ✅ Wait for MySQL to be ready
+    healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
+
   # -------------------------------------------------
-  # 🧭 phpMyAdmin (for MySQL Carpooling Database)
+  # 🧭 phpMyAdmin
   # -------------------------------------------------
   phpmyadmin:
     image: phpmyadmin:latest
@@ -62,9 +65,10 @@ services:
       PMA_USER: root
       PMA_PASSWORD: ""
     ports:
-      - "8088:80"   # ✅ Use port 8088 on your host
+      - "8088:80"
     networks:
       - speedygo-network
+
   # -------------------------------------------------
   # 🗄 PostgreSQL (for Symfony User Service)
   # -------------------------------------------------
@@ -93,15 +97,14 @@ services:
     networks:
       - speedygo-network
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8761" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8761"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
-
   # -------------------------------------------------
-  # ⚙️ Spring Cloud Config Server
+  # ⚙️ Config Server
   # -------------------------------------------------
   config-server:
     build: ./config-server
@@ -113,16 +116,18 @@ services:
     depends_on:
       eureka-server:
         condition: service_healthy
-    networks:
-      - speedygo-network
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8888/actuator/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
+    networks:
+      - speedygo-network
 
-    # -------------------------------------------------
-  # 🔑 Keycloak Authentication Server
+
+  # -------------------------------------------------
+  # 🔑 Keycloak
   # -------------------------------------------------
   keycloak:
     image: quay.io/keycloak/keycloak:25.0.2
@@ -156,7 +161,7 @@ services:
     ports:
       - "8084:8084"
     volumes:
-      - ./speedygo-user-service/app:/var/www/html/app   # ✅ Correct folder mapping
+      - ./speedygo-user-service/app:/var/www/html/app
     networks:
       - speedygo-network
 
@@ -176,7 +181,7 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
     volumes:
-      - tripdata:/data       # ✅ Persistent H2 database
+      - tripdata:/data
     networks:
       - speedygo-network
 
@@ -187,25 +192,35 @@ services:
     build: ./api-gateway
     container_name: api-gateway
     depends_on:
-      - eureka-server
-      - keycloak
-      - config-server
-      - user-service
-      - trip-service
+      eureka-server:
+        condition: service_healthy    # ✅ wait for Eureka to be ready
+      keycloak:
+        condition: service_started
+      config-server:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      trip-service:
+        condition: service_started
+      carpooling-service:
+        condition: service_started
     ports:
       - "8090:8090"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      SPRING_APPLICATION_NAME: api-gateway
+
     networks:
       - speedygo-network
 
 # -------------------------------------------------
-# 📦 Volumes and Networks
+# 📦 Volumes & Networks
 # -------------------------------------------------
 volumes:
   pgdata:
-  tripdata:             # ✅ Trip persistence
-  mysqlcarpooldata:     # ✅ MySQL persistence for Carpooling
+  tripdata:
+  mysqlcarpooldata:
 
 networks:
   speedygo-network:
