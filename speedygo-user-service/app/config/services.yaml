@@ -1,0 +1,38 @@
+# This file is the entry point to configure your own services.
+
+parameters: {}
+
+services:
+    # ✅ Default configuration for all services (this must be at the root)
+    _defaults:
+        autowire: true      # Automatically inject dependencies
+        autoconfigure: true # Automatically register as commands, etc.
+        bind:
+            string $jwksUrl: '%env(KEYCLOAK_JWKS_URL)%'
+            string $issuer: '%env(KEYCLOAK_ISSUER)%'
+
+    # ✅ Make classes in src/ available to be used as services
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/Entity/'
+            - '../src/Kernel.php'
+
+    # ✅ Explicit binding for HttpClientInterface
+    Symfony\Contracts\HttpClient\HttpClientInterface: '@http_client'
+
+    # ✅ Explicit service definition for your Keycloak authenticator
+    App\Security\KeycloakGuardAuthenticator:
+        arguments:
+            $http: '@http_client'
+            $jwksUrl: '%env(KEYCLOAK_JWKS_URL)%'
+            $issuer: '%env(KEYCLOAK_ISSUER)%'
+
+    # ✅ Explicit service definition for Keycloak Admin
+    App\Service\KeycloakAdmin:
+        arguments:
+            $base: '%env(KEYCLOAK_BASE)%'
+            $realm: '%env(KEYCLOAK_REALM)%'
+            $clientId: '%env(KEYCLOAK_ADMIN_CLIENT_ID)%'
+            $clientSecret: '%env(KEYCLOAK_ADMIN_CLIENT_SECRET)%'
