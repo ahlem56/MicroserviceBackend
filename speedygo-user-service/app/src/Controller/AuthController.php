@@ -482,6 +482,31 @@ public function listAllUsers(EM $em): JsonResponse
     return $this->json($users);
 }
 
+    #[Route('/api/admin/drivers', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function listAllDrivers(EM $em): JsonResponse
+    {
+        $drivers = $em->getRepository(\App\Entity\Driver::class)->findAll();
+
+        $result = array_map(function ($d) {
+            return [
+                'id' => $d->getId(),
+                'firstName' => $d->getFirstName(),
+                'lastName' => $d->getLastName(),
+                'email' => $d->getEmail(),
+                'role' => $d->getRole() ?? 'DRIVER',
+                'availability' => method_exists($d, 'isAvailable') ? $d->isAvailable() : null,
+                'licenseNumber' => method_exists($d, 'getLicenseNumber') ? $d->getLicenseNumber() : null,
+                'insuranceDetails' => method_exists($d, 'getInsuranceDetails') ? $d->getInsuranceDetails() : null,
+                'performanceRating' => method_exists($d, 'getPerformanceRating') ? $d->getPerformanceRating() : null,
+                'schedule' => method_exists($d, 'getSchedule') ? $d->getSchedule() : null,
+                'profilePhoto' => $d->getProfilePhoto(),
+            ];
+        }, $drivers);
+
+        return $this->json($result);
+    }
+
 private function extractJwtPayload(Request $request): array
 {
     $authHeader = $request->headers->get('Authorization');

@@ -1,4 +1,4 @@
-services:
+﻿services:
   # -------------------------------------------------
   # 🗄️ PostgreSQL Database (for Symfony User Service)
   # -------------------------------------------------
@@ -28,9 +28,9 @@ services:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_DATABASE: reclamation_db
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
-      - mysqldata:/var/lib/mysql
+      - reclamationdata:/var/lib/mysql
     networks:
       - speedygo-network
 
@@ -150,6 +150,33 @@ services:
       - speedygo-network
 
   # -------------------------------------------------
+  # 🚗 Vehicule Microservice (Spring Boot + MySQL)
+  # -------------------------------------------------
+  vehicule-service:
+    image: medmissaoui/vehicule-service:latest
+    build:
+      context: ./vehicule
+    container_name: vehicule-service
+    restart: unless-stopped
+    depends_on:
+      - db-mysql
+      - keycloak
+      - eureka-server
+      - config-server
+      - user-service
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://db-mysql:3306/vehicule-db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ""
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+    networks:
+      - speedygo-network
+
+  # -------------------------------------------------
   # 📨 Reclamation Microservice (Spring Boot)
   # -------------------------------------------------
   reclamation-service:
@@ -173,6 +200,7 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ""
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_RABBITMQ_HOST: rabbitmq
       KEYCLOAK_SERVER_URL: http://keycloak:8080
     networks:
       - speedygo-network
@@ -192,6 +220,7 @@ services:
       - config-server
       - user-service
       - event-service
+      - vehicule-service
       - reclamation-service
     ports:
       - "8090:8090"

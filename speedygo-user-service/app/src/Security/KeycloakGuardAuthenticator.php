@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Security;
 
@@ -27,6 +27,7 @@ class KeycloakGuardAuthenticator extends AbstractAuthenticator
 
     public function supports(Request $request): ?bool
     {
+        // Accept a variety of places for tokens to reduce frontend coupling
         return $request->headers->has('Authorization')
             || $request->headers->has('X-Auth-Token')
             || $request->headers->has('Token')
@@ -54,6 +55,7 @@ class KeycloakGuardAuthenticator extends AbstractAuthenticator
             } elseif (str_starts_with($trimmed, 'Token ')) {
                 $token = substr($trimmed, 6);
             } else {
+                // Treat entire header as raw JWT
                 $token = $trimmed;
             }
         } elseif ($fallbackHeader) {
